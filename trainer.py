@@ -7,6 +7,7 @@ import chainer.links as L
 from chainer import iterators
 from chainer import training
 from chainer import optimizers
+from chainer import cuda
 from chainer.training import extensions
 
 from model import FCN
@@ -17,10 +18,10 @@ from unet import UNet
 
 BASE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 TEST_PATH = os.path.join(BASE_ROOT, 'data\\seg_test_images\\seg_test_images')
-TRAIN_ANNO_PATH = os.path.join(BASE_ROOT, 'data\\seg_train_annotations\\seg_train_annotations')
-TRAIN_PATH = os.path.join(BASE_ROOT, 'data\\seg_train_images\\seg_train_images')
+TRAIN_ANNO_PATH = os.path.join(BASE_ROOT, './data/seg_train_anno_without_background - コピー/seg_train_anno_without_background/')
+TRAIN_PATH = os.path.join(BASE_ROOT, './data/seg_train_images - コピー/seg_train_images/')
 
-def create_trainer():
+def create_trainer(log_trigger=(1, 'epoch')):
     
     
     parser = argparse.ArgumentParser()
@@ -35,7 +36,7 @@ def create_trainer():
                         help='Number of images in each mini-batch')
     parser.add_argument('--test-batchsize', '-B', type=int, default=4,
                         help='Number of images in each test mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=50,
+    parser.add_argument('--epoch', '-e', type=int, default=150,
                         help='Number of sweeps oever the dataset to train')
     parser.add_argument('--gpu', '-g', type=int, default=0,
                         help='GPU ID (negative value indicates CPU)')
@@ -64,6 +65,9 @@ def create_trainer():
     
     # model.pyで定義したモデルを使用
     model = FCNN(out_h=256, out_w=256)
+    if args.gpu >= 0:
+        cuda.get_device(args.gpu).use()
+        model.to_gpu(args.gpu)
     
     # ピクセルごとに多値分類なので、ロス関数にsoftmax cross entroypを
     # 精度を測る関数としてmean_squared_errorを使用する
@@ -92,13 +96,12 @@ def create_trainer():
     
     logging_attributes = [
         'epoch', 'main/loss', 'main/accuracy', 'val/main/loss', 'val/main/accuracy']
-    trainer.extend(extensions.LogReport(logging_attributes))
+    trainer.extend(extensions.LogReport(logging_attributes), trigger=log_trigger)
+    trainer.extend(extensions.snapshot(filename='snapshot_epoch-{.updater.epoch}'))
     trainer.extend(extensions.PrintReport(logging_attributes))
     trainer.extend(extensions.PlotReport(['main/loss', 'val/main/loss']))
-    trainer.extend(extensions.PlotReport(['main/accuracy', 'val/main/accuracy'], 'epoch', file_name='accuracy.png'))
     trainer.extend(extensions.Evaluator(val_iter, optimizer.target, device=args.gpu), name='val')
-
     return trainer
 
-trainer = create_trainer()
+trainer = create_trainer(log_trigger=(10, 'epoch'))
 trainer.run()
